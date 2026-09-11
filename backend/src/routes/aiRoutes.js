@@ -10,22 +10,26 @@ function runPythonEngine(params) {
     const scriptPath = path.join(__dirname, '..', '..', '..', 'ml_consultation_time.py');
     
     // Enrich params with real DB data if doctorId or patientId provided
-    let docId = params.doctorId || '1';
-    let doc = get(`SELECT * FROM doctors WHERE id = $1 OR user_id = $1 LIMIT 1`, [docId]);
+    let docId = params.doctorId || 'doc-shah';
+    let doc = get(`SELECT * FROM doctors WHERE id = $1 LIMIT 1`, [docId]);
     if (!doc) doc = get(`SELECT * FROM doctors LIMIT 1`);
 
     let patId = params.patientId;
     let pat = patId ? get(`SELECT * FROM patients WHERE id = $1 LIMIT 1`, [patId]) : null;
 
+    let vType = params.visitType || 'DAILY_CHECKUP';
+    if (vType === 'ROUTINE') vType = 'DAILY_CHECKUP';
+    if (vType === 'EMERGENCY') vType = 'EMERGENCY_TRIAGE';
+
     const enrichedParams = {
       doctorId: doc ? doc.id : 'doc-shah',
       doctorName: doc ? doc.full_name : 'Dr. Rajesh Shah',
-      specialty: doc ? doc.title || doc.department_id : 'Orthopedics',
-      baseAvgMinutes: doc ? doc.avg_consult_minutes || 15 : 15,
-      visitType: params.visitType || 'DAILY_CHECKUP',
-      patientAge: pat ? (pat.age || 45) : (params.patientAge || 45),
-      chronicConditions: pat ? 2 : (params.chronicConditions || 1),
-      vitalsRisk: params.vitalsRisk || 'LOW',
+      specialty: doc ? (doc.department_id || 'Orthopedics') : 'Orthopedics',
+      baseAvgMinutes: doc ? (doc.avg_consult_minutes || 15) : 15,
+      visitType: vType,
+      patientAge: pat ? (pat.age || params.patientAge || 45) : (params.patientAge || 45),
+      chronicConditions: params.chronicConditions || (vType === 'EMERGENCY_TRIAGE' ? 3 : (vType === 'FIRST_VISIT' ? 2 : 1)),
+      vitalsRisk: params.vitalsRisk || (vType === 'EMERGENCY_TRIAGE' ? 'HIGH' : 'LOW'),
       symptoms: params.symptoms || ''
     };
 
@@ -48,11 +52,27 @@ function runPythonEngine(params) {
 
 function calculateRealEngine(params) {
   const base = params.baseAvgMinutes || 15;
-  const visitMults = { 'DAILY_CHECKUP': 0.75, 'FOLLOW_UP': 0.90, 'DIAGNOSTIC_REVIEW': 1.20, 'FIRST_VISIT': 1.50, 'EMERGENCY_TRIAGE': 2.10 };
+  const visitMults = {
+    'DAILY_CHECKUP': 0.75,
+    'FOLLOW_UP': 0.90,
+    'DIAGNOSTIC_REVIEW': 1.25,
+    'FIRST_VISIT': 1.55,
+    'EMERGENCY_TRIAGE': 2.20
+  };
+  const categoryMap = {
+    'DAILY_CHECKUP': 'Daily Routine Check-Up & Vitals Monitoring',
+    'FOLLOW_UP': 'Standard Follow-Up & Prescription Review',
+    'DIAGNOSTIC_REVIEW': 'Lab & Imaging Diagnostic Review',
+    'FIRST_VISIT': 'Initial Comprehensive Clinical Assessment',
+    'EMERGENCY_TRIAGE': 'Acute Emergency Triage & Resuscitation'
+  };
+
   const mult = visitMults[params.visitType] || 1.0;
-  
+  const category = categoryMap[params.visitType] || 'Standard Clinical Visit';
+
   const predicted = Math.max(4, Math.min(60, Math.round(base * mult * 10) / 10));
-  const category = params.visitType === 'DAILY_CHECKUP' ? 'Daily Routine Check-Up & Vitals Monitoring' : 'Standard Clinical Visit';
+  const low = Math.max(3, Math.round(predicted - 3));
+  const high = Math.round(predicted + 4);
 
   return {
     prediction: {
@@ -63,9 +83,9 @@ function calculateRealEngine(params) {
       patient_category: category,
       predicted_avg_minutes: predicted,
       confidence_window: {
-        min_minutes: Math.max(3, Math.round(predicted - 3)),
-        max_minutes: Math.round(predicted + 4),
-        display: `${Math.max(3, Math.round(predicted - 3))} – ${Math.round(predicted + 4)} mins`
+        min_minutes: low,
+        max_minutes: high,
+        display: `${low} – ${high} mins`
       }
     },
     guidelines: {
@@ -73,13 +93,13 @@ function calculateRealEngine(params) {
       patient_category: category,
       specialty: params.specialty,
       doctor_clinical_guidelines: [
-        "1. Perform 5-point vitals check (BP, Heart Rate, SpO2, Temp, BMI).",
-        "2. Review daily symptom log and home monitoring numbers.",
-        "3. Confirm routine prescription refill adequacy."
+        `1. Perform targeted evaluation for ${category}.`,
+        `2. Review ${params.visitType} clinical protocol and vitals.`,
+        "3. Confirm medication dosage and patient adherence."
       ],
       patient_monitoring_protocol: [
-        "Daily self-monitoring of blood pressure every morning at 08:00 AM.",
-        "Record daily resting pulse rate in patient portal app."
+        "Daily self-monitoring in patient portal app.",
+        "Record resting pulse and blood pressure."
       ],
       red_flag_warnings: [
         "Sudden BP spike > 160/100 mmHg",

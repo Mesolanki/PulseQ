@@ -209,3 +209,124 @@ body {
   from { opacity: 0; transform: translateY(-5px); }
   to { opacity: 1; transform: translateY(0); }
 }
+
+/* Digital Receipt Styles */
+.receipt-card {
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 16px;
+  padding: 1.75rem;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.08);
+  color: #0f172a;
+  text-align: left;
+  position: relative;
+}
+
+.receipt-header {
+  border-bottom: 2px dashed #cbd5e1;
+  padding-bottom: 1rem;
+  margin-bottom: 1.25rem;
+  text-align: center;
+}
+
+.receipt-title {
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: #0284c7;
+}
+
+.receipt-subtitle {
+  font-size: 0.8rem;
+  color: #64748b;
+  margin-top: 0.25rem;
+}
+
+.receipt-badge {
+  display: inline-block;
+  padding: 0.25rem 0.75rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+}
+
+.receipt-badge-success {
+  background: #dcfce7;
+  color: #15803d;
+  border: 1px solid #86efac;
+}
+
+.receipt-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0;
+  font-size: 0.85rem;
+}
+
+.receipt-table th {
+  text-align: left;
+  color: #64748b;
+  font-weight: 600;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.receipt-table td {
+  padding: 0.6rem 0;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.receipt-total-row {
+  font-weight: 800;
+  font-size: 1rem;
+  color: #0f172a;
+  border-top: 2px solid #0f172a;
+}
+
+.qr-placeholder {
+  background: #f8fafc;
+  border: 2px dashed #94a3b8;
+  border-radius: 12px;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.toast {
+  position: fixed;
+  bottom: 2rem;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #0f172a;
+  color: #ffffff;
+  padding: 0.75rem 1.5rem;
+  border-radius: 9999px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  box-shadow: 0 10px 20px rgba(0,0,0,0.2);
+  z-index: 9999;
+  animation: fadeIn 0.3s ease;
+}
+
+/* Print Styles for Clean Receipt Downloads */
+@media print {
+  body {
+    background: #ffffff !important;
+    padding: 0 !important;
+  }
+  .header, .tab-nav, form, .no-print {
+    display: none !important;
+  }
+  .patient-container {
+    max-width: 100% !important;
+  }
+  .receipt-card {
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+  }
+}

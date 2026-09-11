@@ -86,8 +86,21 @@ export default function App() {
     socket.on('connect', () => setSocketConnected(true));
     socket.on('disconnect', () => setSocketConnected(false));
     socket.on('queue:updated', () => loadData());
+    socket.on('doctor:status-changed', () => loadData());
+    socket.on('queue:emergency', () => loadData());
+    socket.on('notification:new', () => loadData());
+
+    // 3-second real-time auto-sync backup
+    const syncInterval = setInterval(() => {
+      loadData();
+    }, 3000);
+
     return () => {
       socket.off('queue:updated');
+      socket.off('doctor:status-changed');
+      socket.off('queue:emergency');
+      socket.off('notification:new');
+      clearInterval(syncInterval);
     };
   }, []);
 
@@ -280,7 +293,7 @@ export default function App() {
         {/* Sub-Nav Tabs */}
         <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', padding: '6px', marginBottom: '24px', display: 'flex', gap: '4px' }}>
           <button className={`btn ${activeTab === 'dashboard' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setActiveTab('dashboard')}>Dashboard</button>
-          <button className={`btn ${activeTab === 'appointments' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setActiveTab('appointments')}>Appointments & Slots</button>
+          <button className={`btn ${activeTab === 'appointments' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setActiveTab('appointments')}>Appointments & Slots ({appointments.length})</button>
           <button className={`btn ${activeTab === 'queue' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setActiveTab('queue')}>Today's Live Queue</button>
           <button className={`btn ${activeTab === 'patients' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setActiveTab('patients')}>Patients Directory ({patients.length})</button>
           <button className={`btn ${activeTab === 'rooms' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setActiveTab('rooms')}>Rooms</button>
@@ -295,7 +308,7 @@ export default function App() {
               </div>
               <div className="stat-card">
                 <span className="stat-card-label">Today's Appointments</span>
-                <span className="stat-card-value">{appointments.length || 48}</span>
+                <span className="stat-card-value">{appointments.length}</span>
               </div>
               <div className="stat-card">
                 <span className="stat-card-label">Waiting Patients</span>

@@ -47,17 +47,23 @@ export default function App() {
   const [aiData, setAiData] = useState(null);
 
   const fetchAIPrediction = async (item) => {
+    if (!item) return;
     try {
+      let vType = item.visit_type || 'DAILY_CHECKUP';
+      if (vType === 'ROUTINE') vType = 'DAILY_CHECKUP';
+      if (vType === 'EMERGENCY') vType = 'EMERGENCY_TRIAGE';
+
       const res = await fetch(`${API_BASE}/ai/predict-consultation`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          doctorId: doctorId || 'doc-shah',
-          visitType: item?.visit_type || 'DAILY_CHECKUP',
-          patientAge: 45,
-          chronicConditions: 1,
-          vitalsRisk: 'LOW',
-          symptoms: chiefComplaint || item?.visit_type
+          patientId: item.patient_id,
+          doctorId: doctorId || item.doctor_id || 'doc-shah',
+          visitType: vType,
+          patientAge: item.age || 45,
+          chronicConditions: item.comorbidities_count || (vType === 'EMERGENCY_TRIAGE' ? 3 : 1),
+          vitalsRisk: vType === 'EMERGENCY_TRIAGE' ? 'HIGH' : 'LOW',
+          symptoms: chiefComplaint || item.visit_type || 'Consultation'
         })
       });
       if (res.ok) {
@@ -89,14 +95,19 @@ export default function App() {
       }
     });
 
+    const syncInterval = setInterval(() => {
+      fetchQueueData();
+    }, 3000);
+
     return () => {
       if (socketRef.current) socketRef.current.disconnect();
+      clearInterval(syncInterval);
     };
   }, [doctorId]);
 
-  // Consultation timer ticker
+  // Consultation timer ticker - ONLY runs when status is IN_CONSULTATION and isTimerRunning is true
   useEffect(() => {
-    if (isTimerRunning) {
+    if (isTimerRunning && currentQueueItem?.status === 'IN_CONSULTATION') {
       timerRef.current = setInterval(() => {
         setConsultationTimer(prev => prev + 1);
       }, 1000);
@@ -104,7 +115,7 @@ export default function App() {
       clearInterval(timerRef.current);
     }
     return () => clearInterval(timerRef.current);
-  }, [isTimerRunning]);
+  }, [isTimerRunning, currentQueueItem?.status]);
 
   // Initial load
   useEffect(() => {
@@ -172,16 +183,32 @@ export default function App() {
         setQueue(activeQueue);
         
         // Find if any patient is currently IN_CONSULTATION or CALLED
-        const inConsult = activeQueue.find(q => q.status === 'IN_CONSULTATION' || q.status === 'CALLED');
+        const inConsult = activeQueue.find(q => q.status === 'IN_CONSULTATION');
+        const calledItem = activeQueue.find(q => q.status === 'CALLED');
+
         if (inConsult) {
           setCurrentQueueItem(inConsult);
-          if (inConsult.status === 'IN_CONSULTATION' && !isTimerRunning) {
-            setIsTimerRunning(true);
+          setIsTimerRunning(true);
+          if (inConsult.consult_started_at) {
+            const startTime = new Date(inConsult.consult_started_at).getTime();
+            const diffSecs = Math.floor((Date.now() - startTime) / 1000);
+            const elapsed = (diffSecs > 0 && diffSecs < 7200) ? diffSecs : 0;
+            setConsultationTimer(elapsed);
+          } else {
+            setConsultationTimer(0);
           }
           fetchPatientHistory(inConsult.patient_id);
           fetchAIPrediction(inConsult);
+        } else if (calledItem) {
+          setCurrentQueueItem(calledItem);
+          setIsTimerRunning(false);
+          setConsultationTimer(0);
+          fetchPatientHistory(calledItem.patient_id);
+          fetchAIPrediction(calledItem);
         } else if (activeQueue.length > 0 && !currentQueueItem) {
           setCurrentQueueItem(activeQueue[0]);
+          setIsTimerRunning(false);
+          setConsultationTimer(0);
           fetchPatientHistory(activeQueue[0].patient_id);
           fetchAIPrediction(activeQueue[0]);
         }
@@ -235,6 +262,8 @@ export default function App() {
   };
 
   const handleCallNext = async () => {
+    setIsTimerRunning(false);
+    setConsultationTimer(0);
     try {
       const targetDocId = doctorId || 'doc-shah';
       const res = await fetch(`${API_BASE}/queue/call-next`, {
@@ -271,8 +300,9 @@ export default function App() {
         body: JSON.stringify({ status: 'IN_CONSULTATION' })
       });
       if (res.ok) {
-        setIsTimerRunning(true);
+        setCurrentQueueItem({ ...currentQueueItem, status: 'IN_CONSULTATION' });
         setConsultationTimer(0);
+        setIsTimerRunning(true);
         updateDoctorStatus('IN_CONSULTATION');
         fetchQueueData();
       }
@@ -423,7 +453,7 @@ export default function App() {
           <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
             <Stethoscope size={48} color="var(--accent-primary)" style={{ margin: '0 auto 1rem' }} />
             <h2 style={{ fontSize: '1.5rem', fontWeight: 700 }}>Doctor Consultation Portal</h2>
-            <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginTop: '0.4rem' }}>Smart Clinic & Hospital Queue System</p>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginTop: '0.4rem' }}>PulseQueue OPD Queue & Hospital System</p>
           </div>
 
           {authError && (
@@ -473,7 +503,7 @@ export default function App() {
       <header className="header">
         <div className="header-brand">
           <Stethoscope size={28} />
-          <span>Smart Clinic — Doctor Station</span>
+          <span>PulseQueue — Doctor Station</span>
         </div>
 
         <div className="header-user">
@@ -548,46 +578,61 @@ export default function App() {
                   className={`queue-item ${currentQueueItem?.id === item.id ? 'active' : ''} ${item.visit_type === 'EMERGENCY' ? 'emergency' : ''}`}
                   onClick={() => {
                     setCurrentQueueItem(item);
+                    if (item.status === 'IN_CONSULTATION') {
+                      setIsTimerRunning(true);
+                      if (item.consult_started_at) {
+                        const startTime = new Date(item.consult_started_at).getTime();
+                        const diffSecs = Math.floor((Date.now() - startTime) / 1000);
+                        const elapsed = (diffSecs > 0 && diffSecs < 7200) ? diffSecs : 0;
+                        setConsultationTimer(elapsed);
+                      } else {
+                        setConsultationTimer(0);
+                      }
+                    } else {
+                      setIsTimerRunning(false);
+                      setConsultationTimer(0);
+                    }
                     fetchPatientHistory(item.patient_id);
                     fetchAIPrediction(item);
                   }}
                 >
-                  <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                      <span className={`token-badge ${item.visit_type === 'EMERGENCY' ? 'emergency' : ''}`}>
-                        {item.token_number}
-                      </span>
-                      <strong style={{ fontSize: '0.95rem' }}>{item.patient_name || item.first_name + ' ' + item.last_name}</strong>
-                    </div>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>
-                      {item.visit_type} • Est: {item.eta ? `${item.eta.lowerBound}–${item.eta.upperBound}` : 'Calculating...'}
-                    </div>
-                  </div>
+                  <div className="queue-item-header">
+                    <span className={`token-badge ${item.visit_type === 'EMERGENCY' ? 'emergency' : ''}`}>
+                      {item.token_number}
+                    </span>
 
-                  <div style={{ textAlign: 'right' }}>
-                    <span style={{
-                      fontSize: '0.7rem',
-                      fontWeight: 700,
-                      padding: '0.2rem 0.5rem',
-                      borderRadius: '12px',
-                      background: item.status === 'IN_CONSULTATION' ? 'rgba(14, 165, 233, 0.2)' :
-                        item.status === 'CALLED' ? 'rgba(245, 158, 11, 0.2)' :
-                        item.status === 'ON_HOLD' ? 'rgba(139, 92, 246, 0.2)' : 'rgba(255, 255, 255, 0.05)',
-                      color: item.status === 'IN_CONSULTATION' ? 'var(--accent-primary)' :
-                        item.status === 'CALLED' ? 'var(--accent-warning)' :
-                        item.status === 'ON_HOLD' ? 'var(--accent-purple)' : 'var(--text-secondary)'
+                    <span className="status-pill" style={{
+                      background: item.status === 'IN_CONSULTATION' ? '#e0f2fe' :
+                        item.status === 'CALLED' ? '#fef3c7' :
+                        item.status === 'ON_HOLD' ? '#f3e8ff' : '#f1f5f9',
+                      color: item.status === 'IN_CONSULTATION' ? '#0284c7' :
+                        item.status === 'CALLED' ? '#d97706' :
+                        item.status === 'ON_HOLD' ? '#7c3aed' : '#475569',
+                      border: item.status === 'IN_CONSULTATION' ? '1px solid #7dd3fc' :
+                        item.status === 'CALLED' ? '1px solid #fcd34d' :
+                        item.status === 'ON_HOLD' ? '1px solid #c084fc' : '1px solid #cbd5e1'
                     }}>
                       {item.status}
                     </span>
-                    {item.status === 'ON_HOLD' && (
-                      <button
-                        onClick={(e) => { e.stopPropagation(); handleResumeSpot(item.id); }}
-                        style={{ display: 'block', fontSize: '0.7rem', color: 'var(--accent-success)', marginTop: '0.3rem', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}
-                      >
-                        Resume Spot
-                      </button>
-                    )}
                   </div>
+
+                  <div>
+                    <strong style={{ fontSize: '0.95rem', color: '#0f172a', display: 'block', lineHeight: '1.2' }}>
+                      {item.patient_name || `${item.first_name || 'Patient'} ${item.last_name || ''}`}
+                    </strong>
+                    <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '0.2rem' }}>
+                      {item.visit_type} • Est: {item.eta_range || (item.eta ? `${item.eta.lowerBound}–${item.eta.upperBound}` : '2:30 PM–2:45 PM')}
+                    </div>
+                  </div>
+
+                  {item.status === 'ON_HOLD' && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleResumeSpot(item.id); }}
+                      style={{ fontSize: '0.7rem', fontWeight: 700, color: '#059669', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', alignSelf: 'flex-start' }}
+                    >
+                      Resume Spot
+                    </button>
+                  )}
                 </div>
               ))
             )}

@@ -133,43 +133,64 @@ button, input, select, textarea {
 
 .queue-item {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
+  flex-direction: column;
+  gap: 0.4rem;
   padding: 0.85rem;
-  border-radius: 8px;
-  background: #f8fafc;
+  border-radius: 10px;
+  background: #ffffff;
   border: 1px solid var(--border-color);
   transition: all 0.2s ease;
   cursor: pointer;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.02);
 }
 
 .queue-item:hover {
-  background: #f1f5f9;
+  background: #f8fafc;
   border-color: var(--accent-primary);
 }
 
 .queue-item.active {
   border-color: var(--accent-primary);
-  background: #e0f2fe;
+  background: #f0f9ff;
+  box-shadow: 0 4px 12px rgba(2, 132, 199, 0.12);
 }
 
 .queue-item.emergency {
   border-color: var(--accent-danger);
-  background: #fee2e2;
+  background: #fff1f2;
+}
+
+.queue-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
 }
 
 .token-badge {
   font-weight: 800;
-  font-size: 1.1rem;
+  font-size: 0.95rem;
   color: var(--accent-primary);
   padding: 0.2rem 0.6rem;
   background: #e0f2fe;
   border-radius: 6px;
+  white-space: nowrap;
 }
 
 .token-badge.emergency {
   color: var(--accent-danger);
   background: #fee2e2;
+}
+
+.status-pill {
+  font-size: 0.7rem;
+  font-weight: 800;
+  padding: 0.2rem 0.6rem;
+  border-radius: 9999px;
+  white-space: nowrap;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
 }
 
 .timer-box {

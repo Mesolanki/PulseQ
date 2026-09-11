@@ -50,7 +50,7 @@ function calculateQueueETAs(departmentId, doctorId = null) {
 
     // Fetch waiting queue for this doctor ordered by priority_level ASC, joined_at ASC
     const queueEntries = all(
-      `SELECT q.*, p.full_name as patient_name, t.complexity_score
+      `SELECT q.*, p.full_name as patient_name, p.age, p.gender, t.complexity_score, t.comorbidities_count
        FROM queue_entries q
        JOIN patients p ON q.patient_id = p.id
        LEFT JOIN triage_records t ON t.queue_entry_id = q.id
@@ -65,7 +65,12 @@ function calculateQueueETAs(departmentId, doctorId = null) {
       const visitType = entry.visit_type || 'ROUTINE';
       const stats = velocityProfile.velocityMap[visitType] || velocityProfile.velocityMap['ROUTINE'];
       const complexity = entry.complexity_score || 1;
-      const baseDuration = stats.median * (1 + (complexity - 1) * 0.15);
+      
+      // Personalization factors per patient
+      const ageAdjustment = (entry.age && entry.age >= 60) ? 3 : 0; // Elderly care consultation time
+      const comorbiditiesAdjustment = (entry.comorbidities_count || 0) * 2; // Chronic conditions bonus
+      
+      const baseDuration = Math.max(5, (stats.median * (1 + (complexity - 1) * 0.15)) + ageAdjustment + comorbiditiesAdjustment);
 
       const patientsAhead = index;
 
@@ -74,11 +79,11 @@ function calculateQueueETAs(departmentId, doctorId = null) {
       const expectedStartObj = new Date(now.getTime() + cumulativeWaitMinutes * 60000);
       
       // Uncertainty spread widens with queue depth
-      const spreadMinutes = Math.round(stats.p75 - stats.median) + Math.round(patientsAhead * 2.5);
+      const spreadMinutes = Math.max(4, Math.round(stats.p75 - stats.median) + Math.round(patientsAhead * 2));
       const lowerBoundObj = new Date(expectedStartObj.getTime() - (spreadMinutes * 0.4) * 60000);
       const upperBoundObj = new Date(expectedStartObj.getTime() + (spreadMinutes * 0.6 + 3) * 60000);
 
-      let confidence = Math.max(0.60, 0.92 - (patientsAhead * 0.04) - confidencePenalty);
+      let confidence = Math.max(0.65, 0.94 - (patientsAhead * 0.03) - confidencePenalty);
       confidence = Math.round(confidence * 100) / 100;
 
       const etaData = {
@@ -86,6 +91,8 @@ function calculateQueueETAs(departmentId, doctorId = null) {
         tokenNumber: entry.token_number,
         patientId: entry.patient_id,
         patientName: entry.patient_name,
+        patientAge: entry.age || 30,
+        patientGender: entry.gender || 'Other',
         doctorId: doctor.id,
         doctorName: doctor.full_name,
         doctorStatus: docStatus,
@@ -96,7 +103,7 @@ function calculateQueueETAs(departmentId, doctorId = null) {
         upperBound: formatTimeString(upperBoundObj),
         confidence,
         displayText: `Expected between ${formatTimeString(lowerBoundObj)} – ${formatTimeString(upperBoundObj)}`,
-        confidenceText: `${Math.round(confidence * 100)}% confidence`
+        confidenceText: `${Math.round(confidence * 100)}% AI Confidence`
       };
 
       etasByToken[entry.token_number] = etaData;
