@@ -4,6 +4,7 @@
   "description": "Smart Clinic & Hospital Queue Management System Backend",
   "main": "server.js",
   "scripts": {
+    "build": "echo 'Backend has no build step'",
     "start": "node server.js",
     "dev": "node --watch server.js"
   },
