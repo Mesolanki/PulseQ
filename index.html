@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Not a token — a promise</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,500;8..60,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg: #F6F5F1;
+    --surface: #FFFFFF;
+    --ink: #1E2622;
+    --ink-soft: #5B655F;
+    --teal: #2B6E63;
+    --teal-deep: #1B4640;
+    --coral: #C1542C;
+    --coral-soft: #F4E3DA;
+    --amber: #B4791F;
+    --amber-soft: #F4E9D6;
+    --line: #E1DFD6;
+    --good: #2B6E63;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--ink);
+    font-family:'Inter',system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  h1,h2,h3{font-family:'Source Serif 4',serif; font-weight:600; margin:0;}
+  .app{max-width:960px;margin:0 auto;padding:32px 24px 64px;}
+  .top{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:28px;gap:16px;flex-wrap:wrap;}
+  .top h1{font-size:26px;color:var(--teal-deep);}
+  .tagline{color:var(--ink-soft);font-size:14px;margin-top:4px;}
+  .tabs{display:flex;gap:4px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:4px;}
+  .tab{
+    border:none;background:transparent;padding:8px 16px;border-radius:7px;
+    font-family:'Inter';font-size:14px;color:var(--ink-soft);cursor:pointer;
+  }
+  .tab.active{background:var(--teal);color:#fff;}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:20px 22px;margin-bottom:16px;}
+  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;}
+  @media (max-width:720px){.grid3{grid-template-columns:1fr 1fr;}}
+  .stat-label{font-size:12px;color:var(--ink-soft);margin-bottom:6px;}
+  .stat-value{font-size:26px;font-family:'Source Serif 4',serif;font-weight:600;color:var(--teal-deep);}
+  .queue-row{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:14px 4px;border-bottom:1px solid var(--line);gap:12px;
+  }
+  .queue-row:last-child{border-bottom:none;}
+  .p-name{font-size:15px;font-weight:500;}
+  .p-meta{font-size:12.5px;color:var(--ink-soft);margin-top:2px;}
+  .badge{
+    font-size:11.5px;padding:3px 9px;border-radius:20px;font-weight:500;
+    display:inline-block;
+  }
+  .badge.emergency{background:var(--coral-soft);color:var(--coral);}
+  .badge.urgent{background:var(--amber-soft);color:var(--amber);}
+  .badge.routine{background:#EAF0EC;color:var(--teal-deep);}
+  .eta{text-align:right;min-width:120px;}
+  .eta-range{font-size:17px;font-family:'Source Serif 4',serif;font-weight:600;color:var(--teal-deep);}
+  .eta-unit{font-size:12px;color:var(--ink-soft);}
+  .safe-out{font-size:11.5px;color:var(--teal);margin-top:2px;}
+  .not-safe{font-size:11.5px;color:var(--coral);margin-top:2px;}
+  .btn{
+    border:none;border-radius:9px;padding:10px 16px;font-family:'Inter';
+    font-size:14px;font-weight:500;cursor:pointer;color:#fff;
+  }
+  .btn.emergency{background:var(--coral);}
+  .btn.walkin{background:var(--teal);}
+  .btn.ghost{background:transparent;color:var(--ink-soft);border:1px solid var(--line);}
+  .doctor-row{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--line);}
+  .doctor-row:last-child{border-bottom:none;}
+  .dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:8px;}
+  .dot.free{background:var(--teal);}
+  .dot.busy{background:var(--coral);}
+  .patient-select{width:100%;padding:10px;border-radius:8px;border:1px solid var(--line);font-family:'Inter';font-size:14px;margin-bottom:10px;background:#fff;}
+  .empty{color:var(--ink-soft);font-size:14px;padding:20px 4px;}
+  .foot-note{font-size:12px;color:var(--ink-soft);margin-top:18px;line-height:1.6;}
+  .pill-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const h = React.createElement;
+
+const API = window.location.origin && window.location.origin.startsWith("http") ? window.location.origin : "http://localhost:8000";
+
+function useHospitalState(pollMs = 3000) {
+  const [state, setState] = React.useState(null);
+  const [error, setError] = React.useState(null);
+
+  const refresh = React.useCallback(async () => {
+    try {
+      const res = await fetch(`${API}/api/state`);
+      if (!res.ok) throw new Error("bad response");
+      const data = await res.json();
+      setState(data);
+      setError(null);
+    } catch (e) {
+      setError("Can't reach the backend. Is uvicorn running on port 8000?");
+    }
+  }, []);
+
+  React.useEffect(() => {
+    refresh();
+    const id = setInterval(refresh, pollMs);
+    return () => clearInterval(id);
+  }, [refresh, pollMs]);
+
+  return { state, error, refresh };
+}
+
+function priorityClass(p) {
+  return p.toLowerCase();
+}
+
+function PatientRow({ p }) {
+  const safe = p.eta_low >= 8;
+  return h('div', { className: 'queue-row' },
+    h('div', null,
+      h('div', { className: 'p-name' }, p.name),
+      h('div', { className: 'p-meta' },
+        h('span', { className: `badge ${priorityClass(p.priority)}` }, p.priority),
+        "  ·  waiting " + p.waiting_minutes + " min",
+        p.is_walkin ? "  ·  walk-in" : ""
+      )
+    ),
+    h('div', { className: 'eta' },
+      h('div', { className: 'eta-range' }, `${p.eta_low}–${p.eta_high} `, h('span', { className: 'eta-unit' }, 'min')),
+      safe
+        ? h('div', { className: 'safe-out' }, 'Safe to step away')
+        : h('div', { className: 'not-safe' }, 'Stay nearby')
+    )
+  );
+}
+
+function PatientView({ state }) {
+  if (!state) return null;
+  return h('div', null,
+    h('div', { className: 'grid3' },
+      h('div', { className: 'card' },
+        h('div', { className: 'stat-label' }, 'Patients waiting'),
+        h('div', { className: 'stat-value' }, state.dashboard.patients_waiting)
+      ),
+      h('div', { className: 'card' },
+        h('div', { className: 'stat-label' }, 'Doctors free'),
+        h('div', { className: 'stat-value' }, `${state.dashboard.doctors_free} / ${state.dashboard.doctors_total}`)
+      ),
+      h('div', { className: 'card' },
+        h('div', { className: 'stat-label' }, 'Longest current wait'),
+        h('div', { className: 'stat-value' }, `${state.dashboard.longest_wait_minutes}m`)
+      )
+    ),
+    h('div', { className: 'card' },
+      h('h3', { style: { marginBottom: 10, fontSize: 17 } }, 'Waiting room, live'),
+      state.waiting.length === 0
+        ? h('div', { className: 'empty' }, "No one's waiting right now.")
+        : state.waiting.map(p => h(PatientRow, { key: p.id, p: p }))
+    ),
+    h('div', { className: 'card' },
+      h('h3', { style: { marginBottom: 10, fontSize: 17 } }, 'In consultation'),
+      state.in_consult.length === 0
+        ? h('div', { className: 'empty' }, 'No consultations in progress.')
+        : state.in_consult.map(p =>
+            h('div', { className: 'queue-row', key: p.id },
+              h('div', null,
+                h('div', { className: 'p-name' }, p.name),
+                h('div', { className: 'p-meta' }, `with ${p.doctor}`)
+              ),
+              h('div', { className: 'p-meta' }, 'in room')
+            )
+          )
+    ),
+    h('p', { className: 'foot-note' },
+      'Estimates are a range, not a promise to the minute — they widen for patients further back in the queue, because the further out a prediction reaches, the less certain it can honestly be. Model backend: ',
+      h('strong', null, state.model_backend),
+      '.'
+    )
+  );
+}
+
+function StaffView({ state, refresh }) {
+  const [selected, setSelected] = React.useState("");
+
+  if (!state) return null;
+
+  async function post(path) {
+    await fetch(`${API}${path}`, { method: "POST" });
+    refresh();
+  }
+
+  return h('div', null,
+    h('div', { className: 'card' },
+      h('h3', { style: { marginBottom: 6, fontSize: 17 } }, 'Demo controls'),
+      h('p', { className: 'p-meta', style: { marginBottom: 12 } },
+        'Use these to simulate live hospital activity for a demo — inject a walk-in, trigger an emergency that jumps the queue, or mark someone a no-show.'
+      ),
+      h('div', { className: 'pill-row' },
+        h('button', { className: 'btn walkin', onClick: () => post("/api/events/walkin") }, '+ Walk-in patient'),
+        h('button', { className: 'btn emergency', onClick: () => post("/api/events/emergency") }, '+ Emergency (jumps queue)'),
+        h('button', { className: 'btn ghost', onClick: () => post("/api/reset") }, 'Reset simulation')
+      ),
+      state.waiting.length > 0 && h('div', { style: { marginTop: 16 } },
+        h('select', {
+          className: 'patient-select',
+          value: selected,
+          onChange: e => setSelected(e.target.value)
+        },
+          h('option', { value: '' }, 'Mark a patient as a no-show…'),
+          state.waiting.map(p => h('option', { key: p.id, value: p.id }, `${p.name} — ${p.priority}`))
+        ),
+        h('button', {
+          className: 'btn ghost',
+          disabled: !selected,
+          onClick: () => { if (selected) { post(`/api/events/noshow/${selected}`); setSelected(""); } }
+        }, 'Mark no-show')
+      )
+    ),
+    h('div', { className: 'card' },
+      h('h3', { style: { marginBottom: 10, fontSize: 17 } }, 'Doctors'),
+      state.doctors.map(d =>
+        h('div', { className: 'doctor-row', key: d.id },
+          h('div', null,
+            h('span', { className: `dot ${d.status}` }),
+            h('strong', null, d.name),
+            ' ',
+            h('span', { className: 'p-meta' }, `(${d.room})`)
+          ),
+          h('div', { className: 'p-meta' },
+            d.status === "busy"
+              ? `with ${d.current_patient} · ${d.minutes_remaining}m left`
+              : "free"
+          )
+        )
+      )
+    ),
+    h('div', { className: 'grid3' },
+      h('div', { className: 'card' },
+        h('div', { className: 'stat-label' }, 'Avg wait (waiting room)'),
+        h('div', { className: 'stat-value' }, `${state.dashboard.avg_wait_minutes}m`)
+      ),
+      h('div', { className: 'card' },
+        h('div', { className: 'stat-label' }, 'Emergencies in queue'),
+        h('div', { className: 'stat-value' }, state.dashboard.emergency_in_queue)
+      ),
+      h('div', { className: 'card' },
+        h('div', { className: 'stat-label' }, 'Congestion'),
+        h('div', { className: 'stat-value' },
+          state.dashboard.patients_waiting > state.dashboard.doctors_total * 3 ? "High" :
+          state.dashboard.patients_waiting > state.dashboard.doctors_total ? "Moderate" : "Low"
+        )
+      )
+    )
+  );
+}
+
+function App() {
+  const { state, error, refresh } = useHospitalState(3000);
+  const [tab, setTab] = React.useState("patient");
+
+  return h('div', { className: 'app' },
+    h('div', { className: 'top' },
+      h('div', null,
+        h('h1', null, 'Not a token — a promise'),
+        h('div', { className: 'tagline' }, 'Live outpatient queue predictions, updating as the department actually moves.')
+      ),
+      h('div', { className: 'tabs' },
+        h('button', { className: `tab ${tab === "patient" ? "active" : ""}`, onClick: () => setTab("patient") }, 'Patient view'),
+        h('button', { className: `tab ${tab === "staff" ? "active" : ""}`, onClick: () => setTab("staff") }, 'Staff / demo panel')
+      )
+    ),
+    error && h('div', { className: 'card', style: { borderColor: "var(--coral)" } },
+      h('strong', { style: { color: "var(--coral)" } }, error),
+      h('p', { className: 'p-meta', style: { marginTop: 6 } },
+        'Start it with: ', h('code', null, 'uvicorn main:app --reload --port 8000'), ' from the backend folder.'
+      )
+    ),
+    tab === "patient" ? h(PatientView, { state: state }) : h(StaffView, { state: state, refresh: refresh })
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(h(App));
+</script>
+</body>
+</html>
