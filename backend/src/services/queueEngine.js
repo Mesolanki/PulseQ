@@ -240,6 +240,40 @@ function insertEmergencyPatient({ patientId, doctorId, departmentId, reason = 'C
   return get(`SELECT * FROM queue_entries WHERE id = $1`, [queueEntryId]);
 }
 
+function reallocateLatePatient({ queueEntryId, userId = 'system' }) {
+  const entry = get(`SELECT * FROM queue_entries WHERE id = $1`, [queueEntryId]);
+  if (!entry) return null;
+
+  // Move joined_at 30 mins into the future & set status to LATE_REALLOCATED
+  run(
+    `UPDATE queue_entries 
+     SET status = 'LATE_REALLOCATED', 
+         priority_level = priority_level + 1,
+         joined_at = datetime('now', '+30 minutes') 
+     WHERE id = $1`,
+    [queueEntryId]
+  );
+
+  run(
+    `INSERT INTO queue_events (id, queue_entry_id, event_type, actor_id, actor_role, payload)
+     VALUES ($1, $2, 'LATE_PATIENT_REALLOCATED', $3, 'STAFF', $4)`,
+    ['evt-' + Date.now(), queueEntryId, userId, JSON.stringify({ tokenNumber: entry.token_number, doctorId: entry.doctor_id })]
+  );
+
+  logAuditAction({
+    userId,
+    action: 'LATE_PATIENT_REALLOCATED',
+    targetType: 'queue_entry',
+    targetId: queueEntryId,
+    reason: `Patient missed turn for token ${entry.token_number}. Automatically reallocated to later slot.`
+  });
+
+  // Automatically promote/call next patient if doctor has no active consultation
+  callNextPatient({ doctorId: entry.doctor_id, userId });
+
+  return get(`SELECT * FROM queue_entries WHERE id = $1`, [queueEntryId]);
+}
+
 module.exports = {
   checkInPatient,
   callNextPatient,
@@ -247,5 +281,6 @@ module.exports = {
   completeConsultation,
   holdMySpot,
   resumeSpot,
-  insertEmergencyPatient
+  insertEmergencyPatient,
+  reallocateLatePatient
 };

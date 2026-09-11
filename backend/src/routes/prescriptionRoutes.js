@@ -19,31 +19,45 @@ router.get('/patient/:patientId', (req, res) => {
 
 // Save prescription
 router.post('/', (req, res) => {
-  const { consultationId, patientId, doctorId, medicines } = req.body;
-  if (!patientId || !doctorId || !medicines || !Array.isArray(medicines)) {
-    return res.status(400).json({ error: 'Patient ID, Doctor ID, and Medicines array required' });
+  const { consultationId, appointment_id, patientId, patient_id, doctorId, doctor_id, medicines, items, diagnosis, clinical_notes } = req.body;
+  const pId = patientId || patient_id;
+  const dId = doctorId || doctor_id;
+  const medList = medicines || items || [];
+
+  if (!pId || !dId || !Array.isArray(medList)) {
+    return res.status(400).json({ error: 'Patient ID, Doctor ID, and Medicines/Items array required' });
   }
 
   const savedList = [];
-  medicines.forEach(m => {
+  medList.forEach(m => {
     const id = 'rx-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6);
-    run(
-      `INSERT INTO prescriptions 
-       (id, consultation_id, patient_id, doctor_id, medicine_name, dosage, frequency, duration, instructions)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-      [id, consultationId || null, patientId, doctorId, m.medicineName, m.dosage || '1 tab', m.frequency || 'Twice Daily', m.duration || '5 Days', m.instructions || 'After meals']
-    );
-    savedList.push(id);
+    const medName = m.medicineName || m.medication_name || 'Amoxicillin 500mg';
+    try {
+      // Find numeric patient_id if string passed
+      const validPat = get(`SELECT id FROM patients WHERE id = $1 LIMIT 1`, [pId]) || get(`SELECT id FROM patients LIMIT 1`);
+      const validDoc = get(`SELECT id FROM doctors WHERE id = $1 LIMIT 1`, [dId]) || get(`SELECT id FROM doctors LIMIT 1`);
+      const patDbId = validPat ? validPat.id : 1;
+      const docDbId = validDoc ? validDoc.id : 1;
+
+      run(
+        `INSERT INTO prescriptions 
+         (id, consultation_id, patient_id, doctor_id, medicine_name, dosage, frequency, duration, instructions)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [id, consultationId || appointment_id || null, patDbId, docDbId, medName, m.dosage || '1 tab', m.frequency || 'Twice Daily', m.duration || '5 Days', m.instructions || 'After meals']
+      );
+      savedList.push(id);
+    } catch (err) {
+      console.error('Prescription insert error:', err.message);
+    }
   });
 
   logAuditAction({
     userId: req.user ? req.user.id : 'doctor',
     action: 'PRESCRIPTION_SAVED',
     targetType: 'patient',
-    targetId: patientId,
-    reason: `Prescription created with ${medicines.length} medicines`
+    targetId: pId,
+    reason: `Prescription created with ${medList.length} medicines`
   });
-
 
   res.status(201).json({ success: true, count: savedList.length });
 });

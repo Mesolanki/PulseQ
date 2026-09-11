@@ -9,7 +9,8 @@ const {
   completeConsultation,
   holdMySpot,
   resumeSpot,
-  insertEmergencyPatient
+  insertEmergencyPatient,
+  reallocateLatePatient
 } = require('../services/queueEngine');
 const { calculateQueueETAs } = require('../services/etaEngine');
 const { broadcastQueueUpdate, broadcastEmergencyInserted } = require('../socket/socketGateway');
@@ -126,6 +127,26 @@ router.post('/:id/complete', (req, res) => {
   res.json(updated);
 });
 
+// Generic status update for queue entry (e.g. IN_CONSULTATION, COMPLETED, CALLED)
+router.put('/:id/status', (req, res) => {
+  const { status, notes } = req.body;
+  if (status === 'IN_CONSULTATION') {
+    const updated = startConsultation({ queueEntryId: req.params.id, userId: req.user ? req.user.id : 'doc-shah' });
+    if (!updated) return res.status(404).json({ error: 'Queue entry not found' });
+    broadcastQueueUpdate({ action: 'CONSULTATION_STARTED', tokenNumber: updated.token_number });
+    return res.json(updated);
+  } else if (status === 'COMPLETED') {
+    const updated = completeConsultation({ queueEntryId: req.params.id, userId: req.user ? req.user.id : 'doc-shah', notes });
+    if (!updated) return res.status(404).json({ error: 'Queue entry not found' });
+    broadcastQueueUpdate({ action: 'CONSULTATION_COMPLETED', tokenNumber: updated.token_number });
+    return res.json(updated);
+  }
+  run(`UPDATE queue_entries SET status = $1 WHERE id = $2`, [status, req.params.id]);
+  const updated = get(`SELECT * FROM queue_entries WHERE id = $1`, [req.params.id]);
+  broadcastQueueUpdate({ action: 'STATUS_UPDATED', tokenNumber: updated ? updated.token_number : '' });
+  res.json(updated || { success: true });
+});
+
 
 // Hold My Spot
 router.post('/:id/hold', (req, res) => {
@@ -143,6 +164,15 @@ router.post('/:id/resume', (req, res) => {
   if (!updated) return res.status(404).json({ error: 'Queue entry not found' });
 
   broadcastQueueUpdate({ action: 'RESUMED', tokenNumber: updated.token_number });
+  res.json(updated);
+});
+
+// Mark Late & Auto-Reallocate Patient to Buffer Slot
+router.post('/:id/reallocate-late', (req, res) => {
+  const updated = reallocateLatePatient({ queueEntryId: req.params.id, userId: req.user ? req.user.id : 'receptionist' });
+  if (!updated) return res.status(404).json({ error: 'Queue entry not found' });
+
+  broadcastQueueUpdate({ action: 'LATE_PATIENT_REALLOCATED', tokenNumber: updated.token_number });
   res.json(updated);
 });
 

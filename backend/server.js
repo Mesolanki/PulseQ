@@ -14,6 +14,7 @@ const roomRoutes = require('./src/routes/roomRoutes');
 const prescriptionRoutes = require('./src/routes/prescriptionRoutes');
 const reportRoutes = require('./src/routes/reportRoutes');
 const settingRoutes = require('./src/routes/settingRoutes');
+const aiRoutes = require('./src/routes/aiRoutes');
 const { initSocketGateway } = require('./src/socket/socketGateway');
 
 const app = express();
@@ -44,6 +45,7 @@ app.use('/api/rooms', roomRoutes);
 app.use('/api/prescriptions', prescriptionRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/settings', settingRoutes);
+app.use('/api/ai', aiRoutes);
 
 
 // Health check

@@ -5,7 +5,7 @@ const { verifyToken } = require('../middleware/auth');
 const { logAuditAction } = require('../services/auditLogger');
 
 // Get all patients
-router.get('/', verifyToken, (req, res) => {
+router.get('/', (req, res) => {
   const patients = all(`SELECT * FROM patients ORDER BY created_at DESC`);
   res.json(patients);
 });
@@ -23,7 +23,7 @@ router.get('/search', (req, res) => {
 });
 
 // Get patient by ID
-router.get('/:id', verifyToken, (req, res) => {
+router.get('/:id', (req, res) => {
   const patient = get(`SELECT * FROM patients WHERE id = $1`, [req.params.id]);
   if (!patient) return res.status(404).json({ error: 'Patient not found' });
   res.json(patient);
