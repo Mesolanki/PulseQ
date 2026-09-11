@@ -48,6 +48,19 @@ app.use('/api/settings', settingRoutes);
 app.use('/api/ai', aiRoutes);
 
 
+// Serve static frontend build if dist folder exists (Single URL deployment)
+const fs = require('fs');
+const path = require('path');
+const distPath = path.join(__dirname, '..', 'dist');
+
+if (fs.existsSync(distPath)) {
+  app.use(express.static(distPath));
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api')) return next();
+    res.sendFile(path.join(distPath, 'index.html'));
+  });
+}
+
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({
@@ -61,3 +74,4 @@ const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
   console.log(`🚀 Smart Clinic Backend Server running on http://localhost:${PORT}`);
 });
+
