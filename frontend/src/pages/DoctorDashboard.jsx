@@ -1,15 +1,29 @@
 import React, { useState, useEffect } from 'react';
-import { fetchQueue, fetchDoctors, callNextPatient, startConsultation, completeConsultation, updateDoctorStatus, fetchIntakeForm } from '../services/api';
+import { 
+  fetchQueue, fetchDoctors, callNextPatient, startConsultation, completeConsultation, updateDoctorStatus, 
+  fetchIntakeForm, savePrescription, fetchPatientHistory 
+} from '../services/api';
 
 export default function DoctorDashboard({ user }) {
+  const [activeTab, setActiveTab] = useState('consultation');
   const [doctorId, setDoctorId] = useState('');
   const [doctors, setDoctors] = useState([]);
   const [queueData, setQueueData] = useState(null);
   const [activeIntake, setActiveIntake] = useState(null);
+  const [patientHistoryList, setPatientHistoryList] = useState([]);
   const [consultTimerSeconds, setConsultTimerSeconds] = useState(0);
-  const [consultNotes, setConsultNotes] = useState('');
 
-  // Find doctor ID for user
+  // Clinical Consultation Form state
+  const [diagnosis, setDiagnosis] = useState('');
+  const [clinicalNotes, setClinicalNotes] = useState('');
+  const [followUpDate, setFollowUpDate] = useState('2026-09-25');
+  
+  // Prescription Writer state
+  const [prescriptions, setPrescriptions] = useState([
+    { medicineName: 'Paracetamol 500mg', dosage: '1 tab', frequency: 'Twice Daily', duration: '5 Days', instructions: 'After meals' },
+    { medicineName: 'Ibuprofen 400mg', dosage: '1 tab', frequency: 'As Needed', duration: '3 Days', instructions: 'Take with food' }
+  ]);
+
   useEffect(() => {
     fetchDoctors().then(docs => {
       setDoctors(docs);
@@ -26,12 +40,13 @@ export default function DoctorDashboard({ user }) {
       const q = await fetchQueue('', doctorId);
       setQueueData(q);
 
-      // Check if current patient in consult has intake form
       const inConsult = q.queue.find(item => item.status === 'IN_CONSULTATION');
       if (inConsult) {
         fetchIntakeForm(inConsult.id).then(form => setActiveIntake(form)).catch(() => setActiveIntake(null));
+        fetchPatientHistory(inConsult.patient_id).then(hist => setPatientHistoryList(hist)).catch(() => setPatientHistoryList([]));
       } else {
         setActiveIntake(null);
+        setPatientHistoryList([]);
       }
     } catch (err) {
       console.error(err);
@@ -79,8 +94,20 @@ export default function DoctorDashboard({ user }) {
 
   const handleCompleteConsultation = async (entry) => {
     try {
-      await completeConsultation(entry.id, consultNotes);
-      setConsultNotes('');
+      // 1. Save prescription if medicines added
+      if (prescriptions.length > 0) {
+        await savePrescription({
+          consultationId: 'cons-' + entry.id,
+          patientId: entry.patient_id,
+          doctorId: doctorId,
+          medicines: prescriptions
+        });
+      }
+
+      // 2. Complete consultation
+      await completeConsultation(entry.id, `${diagnosis ? 'Diagnosis: ' + diagnosis + '. ' : ''}${clinicalNotes}`);
+      setDiagnosis('');
+      setClinicalNotes('');
       loadDoctorQueue();
     } catch (err) {
       alert(err.message);
@@ -96,7 +123,11 @@ export default function DoctorDashboard({ user }) {
     }
   };
 
-  if (!queueData) return <div className="card" style={{ padding: '40px', textAlign: 'center' }}>Loading Doctor Consultation Station...</div>;
+  const addPrescriptionRow = () => {
+    setPrescriptions([...prescriptions, { medicineName: '', dosage: '1 tab', frequency: 'Twice Daily', duration: '5 Days', instructions: 'After meals' }]);
+  };
+
+  if (!queueData) return <div className="card" style={{ padding: '40px', textAlign: 'center' }}>Loading Doctor Console...</div>;
 
   const currentDoc = doctors.find(d => d.id === doctorId) || {};
   const currentConsulting = queueData.queue.find(q => q.status === 'IN_CONSULTATION');
@@ -111,7 +142,8 @@ export default function DoctorDashboard({ user }) {
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+      {/* Top Console Bar */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
         <div>
           <h2>Doctor Consultation Console</h2>
           <p style={{ color: 'var(--text-muted)', fontSize: '14px' }}>
@@ -119,9 +151,9 @@ export default function DoctorDashboard({ user }) {
           </p>
         </div>
 
-        {/* Doctor Status Selector */}
+        {/* Doctor Status Control */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{ fontSize: '13px', fontWeight: '600' }}>Status:</span>
+          <span style={{ fontSize: '13px', fontWeight: '600' }}>Doctor Status:</span>
           <select 
             className="form-select" 
             value={currentDoc.current_status || 'AVAILABLE'} 
@@ -138,117 +170,164 @@ export default function DoctorDashboard({ user }) {
         </div>
       </div>
 
-      <div className="grid-2" style={{ marginBottom: '24px' }}>
-        {/* Active Consultation Card */}
-        <div className="card" style={{ borderTop: '4px solid var(--primary-teal)' }}>
-          <h3 style={{ fontSize: '18px', marginBottom: '14px' }}>Active Consultation Station</h3>
+      {/* Sub Navigation Toolbar */}
+      <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', padding: '6px', marginBottom: '24px', display: 'flex', gap: '4px' }}>
+        <button className={`btn ${activeTab === 'consultation' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setActiveTab('consultation')}>Active Consultation</button>
+        <button className={`btn ${activeTab === 'intake' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setActiveTab('intake')}>Digital Intake</button>
+        <button className={`btn ${activeTab === 'history' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setActiveTab('history')}>Patient History</button>
+        <button className={`btn ${activeTab === 'queue' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setActiveTab('queue')}>Waiting Queue ({waitingQueue.length})</button>
+      </div>
 
-          {currentConsulting ? (
-            <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                <div>
-                  <span className="badge badge-consulting">IN CONSULTATION</span>
-                  <div style={{ fontSize: '28px', fontWeight: '800', fontFamily: 'var(--font-serif)', color: 'var(--primary-teal-deep)', marginTop: '4px' }}>
-                    {currentConsulting.token_number}
+      {/* ACTIVE CONSULTATION TAB */}
+      {activeTab === 'consultation' && (
+        <div className="grid-2">
+          {/* Consultation Station */}
+          <div className="card" style={{ borderTop: '4px solid var(--primary-teal)' }}>
+            <h3 style={{ fontSize: '18px', marginBottom: '14px' }}>Clinical Consultation Station</h3>
+
+            {currentConsulting ? (
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                  <div>
+                    <span className="badge badge-consulting">IN CONSULTATION</span>
+                    <div style={{ fontSize: '32px', fontWeight: '800', fontFamily: 'var(--font-serif)', color: 'var(--primary-teal-deep)' }}>
+                      {currentConsulting.token_number}
+                    </div>
+                    <div style={{ fontSize: '18px', fontWeight: '600' }}>{currentConsulting.patient_name}</div>
+                    <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>{currentConsulting.visit_type}</div>
                   </div>
-                  <div style={{ fontSize: '18px', fontWeight: '600' }}>{currentConsulting.patient_name}</div>
-                  <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>{currentConsulting.visit_type} · Phone: {currentConsulting.patient_phone}</div>
-                </div>
 
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: '12px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Consult Timer</div>
-                  <div style={{ fontSize: '32px', fontWeight: '700', fontFamily: 'monospace', color: 'var(--primary-teal-deep)' }}>
-                    {formatTimer(consultTimerSeconds)}
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontSize: '12px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Consultation Timer</div>
+                    <div style={{ fontSize: '36px', fontWeight: '700', fontFamily: 'monospace', color: 'var(--primary-teal-deep)' }}>
+                      {formatTimer(consultTimerSeconds)}
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              {/* Digital Intake Preview */}
-              {activeIntake ? (
-                <div style={{ background: 'var(--bg-main)', padding: '12px 14px', borderRadius: '8px', marginBottom: '16px', fontSize: '13px' }}>
-                  <div style={{ fontWeight: '700', marginBottom: '4px', color: 'var(--primary-teal-deep)' }}>📋 Digital Pre-Consultation Intake:</div>
-                  <div><strong>Reason:</strong> {activeIntake.reason_for_visit}</div>
-                  <div><strong>Symptoms:</strong> {activeIntake.symptoms}</div>
-                  <div><strong>Medications:</strong> {activeIntake.current_medications}</div>
-                  <div><strong>Allergies:</strong> <span style={{ color: 'var(--coral-danger)', fontWeight: '600' }}>{activeIntake.allergies}</span></div>
+                <div className="form-group">
+                  <label className="form-label">Diagnosis</label>
+                  <input type="text" className="form-input" placeholder="e.g. Lumbar Spondylosis / Sprain" value={diagnosis} onChange={e => setDiagnosis(e.target.value)} />
                 </div>
-              ) : (
-                <div style={{ background: 'var(--bg-main)', padding: '10px 14px', borderRadius: '8px', marginBottom: '16px', fontSize: '13px', color: 'var(--text-muted)' }}>
-                  Intake summary: Standard appointment checkup.
+
+                <div className="form-group">
+                  <label className="form-label">Clinical Notes</label>
+                  <textarea className="form-textarea" rows="3" placeholder="Enter clinical observations, progress, and physical exam..." value={clinicalNotes} onChange={e => setClinicalNotes(e.target.value)}></textarea>
                 </div>
-              )}
 
-              <div className="form-group">
-                <label className="form-label">Consultation & Prescription Notes</label>
-                <textarea 
-                  className="form-textarea" 
-                  rows="3" 
-                  placeholder="Enter diagnosis, clinical notes, or prescription..."
-                  value={consultNotes}
-                  onChange={e => setConsultNotes(e.target.value)}
-                ></textarea>
+                <div className="form-group">
+                  <label className="form-label">Follow-Up Date</label>
+                  <input type="date" className="form-input" value={followUpDate} onChange={e => setFollowUpDate(e.target.value)} />
+                </div>
+
+                <button className="btn btn-primary btn-lg" style={{ width: '100%', marginTop: '12px' }} onClick={() => handleCompleteConsultation(currentConsulting)}>
+                  ✅ Complete Consultation & Advance Queue
+                </button>
               </div>
-
-              <button className="btn btn-primary" style={{ width: '100%' }} onClick={() => handleCompleteConsultation(currentConsulting)}>
-                ✅ Complete Consultation & Advance Queue
-              </button>
-            </div>
-          ) : calledPatient ? (
-            <div style={{ textAlign: 'center', padding: '24px 0' }}>
-              <span className="badge badge-called" style={{ fontSize: '14px', padding: '6px 14px' }}>PATIENT CALLED</span>
-              <div style={{ fontSize: '36px', fontWeight: '800', fontFamily: 'var(--font-serif)', color: 'var(--accent-blue)', margin: '10px 0' }}>
-                {calledPatient.token_number}
+            ) : calledPatient ? (
+              <div style={{ textAlign: 'center', padding: '24px 0' }}>
+                <span className="badge badge-called" style={{ fontSize: '14px', padding: '6px 14px' }}>PATIENT CALLED</span>
+                <div style={{ fontSize: '42px', fontWeight: '800', fontFamily: 'var(--font-serif)', color: 'var(--accent-blue)', margin: '10px 0' }}>
+                  {calledPatient.token_number}
+                </div>
+                <div style={{ fontSize: '20px', fontWeight: '600', marginBottom: '16px' }}>{calledPatient.patient_name}</div>
+                <button className="btn btn-primary btn-lg" onClick={() => handleStartConsultation(calledPatient)}>
+                  ▶️ Patient Arrived — Start Consultation
+                </button>
               </div>
-              <div style={{ fontSize: '18px', fontWeight: '600', marginBottom: '16px' }}>{calledPatient.patient_name}</div>
-              <button className="btn btn-primary btn-lg" onClick={() => handleStartConsultation(calledPatient)}>
-                ▶️ Patient Arrived — Start Consultation
-              </button>
-            </div>
-          ) : (
-            <div style={{ textAlign: 'center', padding: '36px 0' }}>
-              <div style={{ fontSize: '15px', color: 'var(--text-muted)', marginBottom: '16px' }}>No active consultation in progress</div>
-              <button className="btn btn-primary btn-lg" onClick={handleCallNext} disabled={waitingQueue.length === 0}>
-                📢 Call Next Patient
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* Doctor Queue View */}
-        <div className="card">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-            <h3 style={{ fontSize: '18px' }}>Waiting Patients ({waitingQueue.length})</h3>
-            <button className="btn btn-secondary" onClick={handleCallNext} disabled={waitingQueue.length === 0 || !!currentConsulting || !!calledPatient}>
-              Call Next
-            </button>
+            ) : (
+              <div style={{ textAlign: 'center', padding: '40px 0' }}>
+                <div style={{ fontSize: '16px', color: 'var(--text-muted)', marginBottom: '16px' }}>No active consultation in progress</div>
+                <button className="btn btn-primary btn-lg" onClick={handleCallNext} disabled={waitingQueue.length === 0}>
+                  📢 Call Next Patient
+                </button>
+              </div>
+            )}
           </div>
 
+          {/* Prescription Writer */}
+          <div className="card">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+              <h3 style={{ fontSize: '18px' }}>Rx Prescription Writer</h3>
+              <button className="btn btn-secondary" style={{ fontSize: '12px', padding: '4px 10px' }} onClick={addPrescriptionRow}>+ Add Medicine</button>
+            </div>
+
+            {prescriptions.map((rx, idx) => (
+              <div key={idx} style={{ background: 'var(--bg-main)', border: '1px solid var(--border-color)', padding: '12px', borderRadius: '8px', marginBottom: '10px' }}>
+                <div className="grid-2" style={{ marginBottom: '8px' }}>
+                  <input type="text" className="form-input" placeholder="Medicine Name (e.g. Paracetamol 500mg)" value={rx.medicineName} onChange={e => {
+                    const updated = [...prescriptions];
+                    updated[idx].medicineName = e.target.value;
+                    setPrescriptions(updated);
+                  }} />
+                  <input type="text" className="form-input" placeholder="Dosage (e.g. 1 tab)" value={rx.dosage} onChange={e => {
+                    const updated = [...prescriptions];
+                    updated[idx].dosage = e.target.value;
+                    setPrescriptions(updated);
+                  }} />
+                </div>
+
+                <div className="grid-2">
+                  <input type="text" className="form-input" placeholder="Frequency (e.g. Twice Daily)" value={rx.frequency} onChange={e => {
+                    const updated = [...prescriptions];
+                    updated[idx].frequency = e.target.value;
+                    setPrescriptions(updated);
+                  }} />
+                  <input type="text" className="form-input" placeholder="Duration (e.g. 5 Days)" value={rx.duration} onChange={e => {
+                    const updated = [...prescriptions];
+                    updated[idx].duration = e.target.value;
+                    setPrescriptions(updated);
+                  }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* DIGITAL INTAKE TAB */}
+      {activeTab === 'intake' && (
+        <div className="card">
+          <h3 style={{ marginBottom: '16px' }}>Digital Pre-Consultation Intake Form</h3>
+          {activeIntake ? (
+            <div>
+              <div><strong>Reason for Visit:</strong> {activeIntake.reason_for_visit}</div>
+              <div style={{ marginTop: '8px' }}><strong>Symptoms:</strong> {activeIntake.symptoms}</div>
+              <div style={{ marginTop: '8px' }}><strong>Current Medications:</strong> {activeIntake.current_medications}</div>
+              <div style={{ marginTop: '8px' }}><strong>Allergies:</strong> <span style={{ color: 'var(--coral-danger)', fontWeight: '600' }}>{activeIntake.allergies}</span></div>
+            </div>
+          ) : (
+            <div style={{ color: 'var(--text-muted)' }}>No pre-consultation intake form available for current patient.</div>
+          )}
+        </div>
+      )}
+
+      {/* PATIENT HISTORY TAB */}
+      {activeTab === 'history' && (
+        <div className="card">
+          <h3 style={{ marginBottom: '16px' }}>Patient Clinical History</h3>
           <div className="table-container">
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>Token</th>
-                  <th>Patient</th>
-                  <th>Visit Type</th>
-                  <th>ETA</th>
-                  <th>Action</th>
+                  <th>Visit Date</th>
+                  <th>Physician</th>
+                  <th>Department</th>
+                  <th>Diagnosis</th>
+                  <th>Clinical Notes</th>
                 </tr>
               </thead>
               <tbody>
-                {waitingQueue.length === 0 ? (
-                  <tr><td colSpan="5" style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '24px' }}>No patients waiting in queue</td></tr>
+                {patientHistoryList.length === 0 ? (
+                  <tr><td colSpan="5" style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '20px' }}>No previous visit history records found.</td></tr>
                 ) : (
-                  waitingQueue.map(q => (
-                    <tr key={q.id}>
-                      <td style={{ fontWeight: '700', color: 'var(--primary-teal-deep)' }}>{q.token_number}</td>
-                      <td>{q.patient_name}</td>
-                      <td><span className={`badge badge-${q.priority_level === 1 ? 'emergency' : 'routine'}`}>{q.visit_type}</span></td>
-                      <td style={{ fontSize: '12px' }}>{q.eta ? q.eta.expectedStart : '—'}</td>
-                      <td>
-                        <button className="btn btn-secondary" style={{ padding: '4px 8px', fontSize: '12px' }} onClick={() => handleStartConsultation(q)}>
-                          Call Now
-                        </button>
-                      </td>
+                  patientHistoryList.map(h => (
+                    <tr key={h.id}>
+                      <td style={{ fontWeight: '600' }}>{h.visit_date}</td>
+                      <td>{h.doctor_name}</td>
+                      <td>{h.department_name}</td>
+                      <td style={{ fontWeight: '600', color: 'var(--primary-teal-deep)' }}>{h.diagnosis}</td>
+                      <td>{h.notes}</td>
                     </tr>
                   ))
                 )}
@@ -256,7 +335,42 @@ export default function DoctorDashboard({ user }) {
             </table>
           </div>
         </div>
-      </div>
+      )}
+
+      {/* QUEUE TAB */}
+      {activeTab === 'queue' && (
+        <div className="card">
+          <h3 style={{ marginBottom: '16px' }}>Waiting Queue List</h3>
+          <div className="table-container">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Token</th>
+                  <th>Patient</th>
+                  <th>Visit Type</th>
+                  <th>ETA Start</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {waitingQueue.map(q => (
+                  <tr key={q.id}>
+                    <td style={{ fontWeight: '700', color: 'var(--primary-teal-deep)' }}>{q.token_number}</td>
+                    <td>{q.patient_name}</td>
+                    <td><span className="badge badge-routine">{q.visit_type}</span></td>
+                    <td>{q.eta ? q.eta.expectedStart : '—'}</td>
+                    <td>
+                      <button className="btn btn-secondary" style={{ padding: '4px 8px', fontSize: '12px' }} onClick={() => handleStartConsultation(q)}>
+                        Call Now
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

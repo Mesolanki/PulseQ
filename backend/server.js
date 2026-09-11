@@ -10,6 +10,10 @@ const appointmentRoutes = require('./src/routes/appointmentRoutes');
 const queueRoutes = require('./src/routes/queueRoutes');
 const intakeRoutes = require('./src/routes/intakeRoutes');
 const auditRoutes = require('./src/routes/auditRoutes');
+const roomRoutes = require('./src/routes/roomRoutes');
+const prescriptionRoutes = require('./src/routes/prescriptionRoutes');
+const reportRoutes = require('./src/routes/reportRoutes');
+const settingRoutes = require('./src/routes/settingRoutes');
 const { initSocketGateway } = require('./src/socket/socketGateway');
 
 const app = express();
@@ -36,6 +40,11 @@ app.use('/api/appointments', appointmentRoutes);
 app.use('/api/queue', queueRoutes);
 app.use('/api/intake', intakeRoutes);
 app.use('/api/audit', auditRoutes);
+app.use('/api/rooms', roomRoutes);
+app.use('/api/prescriptions', prescriptionRoutes);
+app.use('/api/reports', reportRoutes);
+app.use('/api/settings', settingRoutes);
+
 
 // Health check
 app.get('/api/health', (req, res) => {

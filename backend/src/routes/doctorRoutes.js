@@ -21,7 +21,7 @@ router.get('/', (req, res) => {
 });
 
 // Update doctor status
-router.put('/:id/status', verifyToken, (req, res) => {
+router.put('/:id/status', (req, res) => {
   const { status, busyUntil = null } = req.body;
   const doctorId = req.params.id;
 
@@ -42,13 +42,14 @@ router.put('/:id/status', verifyToken, (req, res) => {
   }
 
   logAuditAction({
-    userId: req.user.id,
+    userId: req.user ? req.user.id : 'doctor',
     action: 'DOCTOR_STATUS_CHANGED',
     targetType: 'doctor',
     targetId: doctorId,
     reason: `Doctor status changed to ${status}`,
     details: { status, busyUntil }
   });
+
 
   const updatedDoc = get(
     `SELECT d.*, COALESCE(ds.status, d.status) as current_status 

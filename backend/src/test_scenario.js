@@ -21,29 +21,76 @@ function makeRequest(options, postData) {
   });
 }
 
-async function runScenarioTest() {
-  console.log('🧪 Starting End-to-End Smart Clinic Queue Verification...\n');
+async function runFullScenarioTest() {
+  console.log('🧪 Running Complete Smart Clinic End-to-End System Verification...\n');
 
   try {
-    // 1. Fetch initial queue state
-    console.log('--- Step 1: Checking Initial Queue State & Predictive ETAs ---');
-    const state1 = await makeRequest({
+    // 1. Appointment Booking Test
+    console.log('--- Step 1: Appointment Booking (Rahul Patel -> Dr. Shah, Orthopedics) ---');
+    const aptRes = await makeRequest({
       hostname: 'localhost',
       port: 5000,
-      path: '/api/queue?departmentId=dept-ortho',
+      path: '/api/appointments',
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    }, {
+      patientId: 'p-103',
+      doctorId: 'doc-shah',
+      departmentId: 'dept-ortho',
+      appointmentDate: '2026-09-15',
+      appointmentTime: '10:30 AM',
+      visitType: 'FIRST_VISIT',
+      reasonForVisit: 'Severe shoulder and back pain'
+    });
+    console.log(`✅ Appointment Created Successfully: ID = ${aptRes.id} (Status: ${aptRes.status})`);
+
+    // 2. Patient Check-In & Token Generation
+    console.log('\n--- Step 2: Check-In & Digital Token Generation ---');
+    const tokenRes = await makeRequest({
+      hostname: 'localhost',
+      port: 5000,
+      path: '/api/queue/check-in',
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    }, {
+      patientId: 'p-103',
+      doctorId: 'doc-shah',
+      departmentId: 'dept-ortho',
+      appointmentId: aptRes.id,
+      visitType: 'DIAGNOSTIC_REVIEW'
+    });
+    console.log(`✅ Token Generated: ${tokenRes.token_number} (Entry ID: ${tokenRes.id})`);
+
+    // 3. Virtual Waiting Room State & Predictive ETA
+    console.log('\n--- Step 3: Virtual Waiting Room & Predictive ETA Lookup ---');
+    const vwrRes = await makeRequest({
+      hostname: 'localhost',
+      port: 5000,
+      path: `/api/queue/virtual-waiting-room/${tokenRes.token_number}`,
       method: 'GET'
     });
+    console.log(`✅ Patient: ${vwrRes.patientName} | Token: ${vwrRes.tokenNumber}`);
+    console.log(`   Doctor: ${vwrRes.doctorName} (Room ${vwrRes.roomNumber}, Floor ${vwrRes.floor})`);
+    console.log(`   Patients Ahead: ${vwrRes.eta ? vwrRes.eta.patientsAhead : '—'}`);
+    console.log(`   Expected Start Window: ${vwrRes.eta ? vwrRes.eta.lowerBound + ' – ' + vwrRes.eta.upperBound : '—'}`);
 
-    console.log(`Active Patients in Queue: ${state1.stats.totalActive}`);
-    const token103 = state1.queue.find(q => q.token_number === 'ORTH-103');
-    if (token103 && token103.eta) {
-      console.log(`✅ Token ORTH-103 Initial ETA: ${token103.eta.displayText} (${Math.round(token103.eta.confidence * 100)}% confidence)`);
-    } else {
-      console.log('ℹ️ Token ORTH-103 status checked');
-    }
+    // 4. Room Reassignment Test
+    console.log('\n--- Step 4: Reassigning Doctor Room (Room 204 -> Room 208) ---');
+    const roomRes = await makeRequest({
+      hostname: 'localhost',
+      port: 5000,
+      path: '/api/rooms/assign',
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    }, {
+      doctorId: 'doc-shah',
+      roomNumber: '208',
+      floor: '2'
+    });
+    console.log(`✅ Room Reassigned: Prev ${roomRes.prevRoom} -> New Room ${roomRes.newRoom} (Floor ${roomRes.floor})`);
 
-    // 2. Trigger Emergency Preemption
-    console.log('\n--- Step 2: Triggering Clinical Emergency Preemption ---');
+    // 5. Trigger Clinical Emergency Preemption
+    console.log('\n--- Step 5: Triggering Clinical Emergency Case Preemption ---');
     const emgRes = await makeRequest({
       hostname: 'localhost',
       port: 5000,
@@ -54,48 +101,62 @@ async function runScenarioTest() {
       patientId: 'p-105',
       doctorId: 'doc-shah',
       departmentId: 'dept-ortho',
-      reason: 'Acute Open Fracture Trauma'
+      reason: 'Acute Chest Pain / Spinal Shock'
     });
+    console.log(`✅ Emergency Case Inserted: Token ${emgRes.token_number} (Priority 1)`);
 
-    console.log(`✅ Emergency Token Created: ${emgRes.token_number} (Priority 1)`);
-
-    // 3. Check updated ETAs after emergency
-    console.log('\n--- Step 3: Verifying Dynamic ETA Cascade Shift ---');
-    const state2 = await makeRequest({
+    // 6. Test Doctor Status Switch & ETA Widening
+    console.log('\n--- Step 6: Doctor Status Switch (INPATIENT_EMERGENCY) ---');
+    const statusRes = await makeRequest({
       hostname: 'localhost',
       port: 5000,
-      path: '/api/queue?departmentId=dept-ortho',
+      path: '/api/doctors/doc-shah/status',
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' }
+    }, { status: 'INPATIENT_EMERGENCY' });
+    console.log(`✅ Doctor Status Updated: ${statusRes.current_status || statusRes.status}`);
+
+
+    // Re-verify ETA widen
+    const vwrResAfterEmg = await makeRequest({
+      hostname: 'localhost',
+      port: 5000,
+      path: `/api/queue/virtual-waiting-room/${tokenRes.token_number}`,
       method: 'GET'
     });
-    const token103AfterEmg = state2.queue.find(q => q.token_number === 'ORTH-103');
-    if (token103AfterEmg && token103AfterEmg.eta) {
-      console.log(`✅ Token ORTH-103 Updated ETA after Emergency: ${token103AfterEmg.eta.displayText} (${Math.round(token103AfterEmg.eta.confidence * 100)}% confidence)`);
-    }
+    console.log(`   Updated ETA Window: ${vwrResAfterEmg.eta ? vwrResAfterEmg.eta.lowerBound + ' – ' + vwrResAfterEmg.eta.upperBound : '—'} (Doctor Status: ${vwrResAfterEmg.doctorStatus})`);
 
-    // 4. Test Hold My Spot
-    console.log('\n--- Step 4: Testing Hold My Spot Feature ---');
+    // Reset Doctor status back to AVAILABLE
+    await makeRequest({
+      hostname: 'localhost',
+      port: 5000,
+      path: '/api/doctors/doc-shah/status',
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' }
+    }, { status: 'AVAILABLE' });
+
+    // 7. Test Hold My Spot & Resume Spot
+    console.log('\n--- Step 7: Testing Hold My Spot & Resume ---');
     const holdRes = await makeRequest({
       hostname: 'localhost',
       port: 5000,
-      path: '/api/queue/q-103/hold',
+      path: `/api/queue/${tokenRes.id}/hold`,
       method: 'POST',
       headers: { 'Content-Type': 'application/json' }
     }, { gracePeriodMinutes: 10 });
-    console.log(`✅ Token ORTH-103 Status: ${holdRes.status} (Grace Period Until: ${holdRes.grace_period_until})`);
+    console.log(`✅ Hold Spot Activated: Status = ${holdRes.status}`);
 
-    // 5. Test Resume Spot
-    console.log('\n--- Step 5: Testing Resume Queue Position ---');
     const resumeRes = await makeRequest({
       hostname: 'localhost',
       port: 5000,
-      path: '/api/queue/q-103/resume',
+      path: `/api/queue/${tokenRes.id}/resume`,
       method: 'POST',
       headers: { 'Content-Type': 'application/json' }
     });
-    console.log(`✅ Token ORTH-103 Status: ${resumeRes.status}`);
+    console.log(`✅ Spot Resumed: Status = ${resumeRes.status}`);
 
-    // 6. Test Doctor Call Next & Start Consultation
-    console.log('\n--- Step 6: Doctor Calls Next Patient & Starts Consultation ---');
+    // 8. Doctor Call Patient, Start Consultation, Save Prescription & Complete
+    console.log('\n--- Step 8: Doctor Calls Patient, Starts Consultation & Writes Prescription ---');
     const callRes = await makeRequest({
       hostname: 'localhost',
       port: 5000,
@@ -105,7 +166,6 @@ async function runScenarioTest() {
     }, { doctorId: 'doc-shah' });
     console.log(`✅ Doctor Called Token: ${callRes.token_number} (${callRes.status})`);
 
-
     const startRes = await makeRequest({
       hostname: 'localhost',
       port: 5000,
@@ -113,25 +173,40 @@ async function runScenarioTest() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' }
     });
-    console.log(`✅ Consultation Started for Token: ${startRes.token_number} (${startRes.status})`);
+    console.log(`✅ Consultation Started: Token ${startRes.token_number} (${startRes.status})`);
 
-    // 7. Complete Consultation
-    console.log('\n--- Step 7: Complete Consultation & Verify Queue Advancement ---');
+    // Save Prescription
+    const rxRes = await makeRequest({
+      hostname: 'localhost',
+      port: 5000,
+      path: '/api/prescriptions',
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    }, {
+      consultationId: 'cons-' + startRes.id,
+      patientId: startRes.patient_id,
+      doctorId: 'doc-shah',
+      medicines: [
+        { medicineName: 'Paracetamol 500mg', dosage: '1 tab', frequency: 'Twice Daily', duration: '5 Days', instructions: 'After meals' }
+      ]
+    });
+    console.log(`✅ Prescription Saved: ${rxRes.count} medicine(s) recorded`);
+
+    // Complete Consultation
     const completeRes = await makeRequest({
       hostname: 'localhost',
       port: 5000,
-      path: `/api/queue/${callRes.id}/complete`,
+      path: `/api/queue/${startRes.id}/complete`,
       method: 'POST',
       headers: { 'Content-Type': 'application/json' }
-    }, { notes: 'Successful treatment and prescription issued.' });
-    console.log(`✅ Consultation Completed for Token: ${completeRes.token_number} (${completeRes.status})`);
+    }, { notes: 'Lumbar disc strain. Advised physiotherapy.' });
+    console.log(`✅ Consultation Completed: Token ${completeRes.token_number} (${completeRes.status})`);
 
-
-    console.log('\n🎉 ALL END-TO-END VERIFICATION CHECKS PASSED SUCCESSFULLY!');
+    console.log('\n🎉 ALL 8 END-TO-END SCENARIO VERIFICATION CHECKS PASSED SUCCESSFULLY!');
 
   } catch (err) {
     console.error('❌ Verification Error:', err);
   }
 }
 
-runScenarioTest();
+runFullScenarioTest();

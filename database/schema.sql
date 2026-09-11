@@ -1,5 +1,18 @@
--- Smart Clinic & Hospital Queue Management System Database Schema
+-- Complete Smart Clinic & Hospital Management System Database Schema
 -- Compatible with PostgreSQL 12+ and SQLite (ANSI SQL subset)
+
+CREATE TABLE IF NOT EXISTS roles (
+    id VARCHAR(50) PRIMARY KEY,
+    name VARCHAR(50) NOT NULL UNIQUE,
+    description TEXT
+);
+
+CREATE TABLE IF NOT EXISTS permissions (
+    id VARCHAR(50) PRIMARY KEY,
+    role_id VARCHAR(50) REFERENCES roles(id),
+    resource VARCHAR(50) NOT NULL,
+    action VARCHAR(50) NOT NULL
+);
 
 CREATE TABLE IF NOT EXISTS departments (
     id VARCHAR(50) PRIMARY KEY,
@@ -10,13 +23,31 @@ CREATE TABLE IF NOT EXISTS departments (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS floors (
+    id VARCHAR(50) PRIMARY KEY,
+    floor_number VARCHAR(20) NOT NULL UNIQUE,
+    name VARCHAR(50),
+    description TEXT
+);
+
+CREATE TABLE IF NOT EXISTS rooms (
+    id VARCHAR(50) PRIMARY KEY,
+    room_number VARCHAR(20) NOT NULL UNIQUE,
+    name VARCHAR(100) NOT NULL,
+    department_id VARCHAR(50) REFERENCES departments(id),
+    current_doctor_id VARCHAR(50),
+    status VARCHAR(30) DEFAULT 'AVAILABLE', -- AVAILABLE, OCCUPIED, MAINTENANCE
+    floor VARCHAR(20) DEFAULT '1',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS users (
     id VARCHAR(50) PRIMARY KEY,
     username VARCHAR(50) NOT NULL UNIQUE,
     password_hash VARCHAR(255) NOT NULL,
     full_name VARCHAR(100) NOT NULL,
     email VARCHAR(100),
-    role VARCHAR(30) NOT NULL, -- SUPER_ADMIN, HOSPITAL_ADMIN, RECEPTIONIST, DOCTOR, NURSE, PATIENT, KIOSK
+    role VARCHAR(30) NOT NULL, -- SUPER_ADMIN, ADMIN, DOCTOR, RECEPTIONIST, STAFF, PATIENT, KIOSK
     department_id VARCHAR(50) REFERENCES departments(id),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -48,7 +79,7 @@ CREATE TABLE IF NOT EXISTS doctors (
     department_id VARCHAR(50) REFERENCES departments(id),
     room_number VARCHAR(20) NOT NULL,
     floor VARCHAR(20) DEFAULT '1',
-    status VARCHAR(30) DEFAULT 'AVAILABLE', -- AVAILABLE, CONSULTING, DOCUMENTING, BREAK, INPATIENT_EMERGENCY, UNAVAILABLE, OFFLINE
+    status VARCHAR(30) DEFAULT 'AVAILABLE', -- AVAILABLE, CONSULTING, DOCUMENTING, BREAK, INPATIENT_EMERGENCY, UNAVAILABLE
     avg_consult_minutes REAL DEFAULT 15.0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -69,7 +100,7 @@ CREATE TABLE IF NOT EXISTS appointments (
     department_id VARCHAR(50) REFERENCES departments(id),
     appointment_date DATE NOT NULL,
     appointment_time VARCHAR(20) NOT NULL,
-    visit_type VARCHAR(30) NOT NULL, -- FIRST_VISIT, FOLLOW_UP, POST_OP, REFILL, DIAGNOSTIC_REVIEW, EMERGENCY, URGENT, ROUTINE
+    visit_type VARCHAR(30) NOT NULL, -- FIRST_VISIT, FOLLOW_UP, POST_OP, REFILL, DIAGNOSTIC_REVIEW, URGENT, EMERGENCY, ROUTINE
     reason_for_visit TEXT,
     status VARCHAR(30) DEFAULT 'SCHEDULED', -- SCHEDULED, CHECKED_IN, WAITING, CALLED, IN_CONSULTATION, COMPLETED, CANCELLED, NO_SHOW, ON_HOLD
     notes TEXT,
@@ -85,7 +116,7 @@ CREATE TABLE IF NOT EXISTS queue_entries (
     appointment_id VARCHAR(50) REFERENCES appointments(id),
     visit_type VARCHAR(30) NOT NULL,
     priority_level INT DEFAULT 3, -- 1: EMERGENCY, 2: URGENT, 3: ROUTINE
-    status VARCHAR(30) DEFAULT 'WAITING', -- WAITING, CALLED, TEMPORARILY_ABSENT, GRACE_PERIOD, RESUMED, IN_CONSULTATION, COMPLETED, NO_SHOW, ON_HOLD
+    status VARCHAR(30) DEFAULT 'WAITING', -- WAITING, CALLED, TEMPORARILY_ABSENT, GRACE_PERIOD, RESUMED, IN_CONSULTATION, COMPLETED, CANCELLED, NO_SHOW, ON_HOLD
     is_walkin BOOLEAN DEFAULT FALSE,
     joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     called_at TIMESTAMP,
@@ -98,7 +129,7 @@ CREATE TABLE IF NOT EXISTS queue_entries (
 CREATE TABLE IF NOT EXISTS queue_events (
     id VARCHAR(50) PRIMARY KEY,
     queue_entry_id VARCHAR(50) REFERENCES queue_entries(id),
-    event_type VARCHAR(50) NOT NULL, -- PATIENT_CHECKED_IN, TOKEN_CREATED, PATIENT_CALLED, PATIENT_STARTED, PATIENT_COMPLETED, EMERGENCY_INSERTED, HOLD_MY_SPOT, RESUMED, etc.
+    event_type VARCHAR(50) NOT NULL, -- PATIENT_REGISTERED, APPOINTMENT_CREATED, PATIENT_CHECKED_IN, TOKEN_CREATED, PATIENT_CALLED, PATIENT_STARTED, PATIENT_COMPLETED, EMERGENCY_CREATED, ROOM_CHANGED, etc.
     actor_id VARCHAR(50),
     actor_role VARCHAR(30),
     payload TEXT,
@@ -122,10 +153,48 @@ CREATE TABLE IF NOT EXISTS consultations (
     queue_entry_id VARCHAR(50) REFERENCES queue_entries(id),
     doctor_id VARCHAR(50) REFERENCES doctors(id),
     patient_id VARCHAR(50) REFERENCES patients(id),
+    appointment_id VARCHAR(50) REFERENCES appointments(id),
     started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     completed_at TIMESTAMP,
     duration_minutes REAL,
+    diagnosis TEXT,
     notes TEXT,
+    follow_up_date DATE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS prescriptions (
+    id VARCHAR(50) PRIMARY KEY,
+    consultation_id VARCHAR(50) REFERENCES consultations(id),
+    patient_id VARCHAR(50) NOT NULL REFERENCES patients(id),
+    doctor_id VARCHAR(50) NOT NULL REFERENCES doctors(id),
+    medicine_name VARCHAR(100) NOT NULL,
+    dosage VARCHAR(50) NOT NULL,
+    frequency VARCHAR(50) NOT NULL,
+    duration VARCHAR(50) NOT NULL,
+    instructions TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS patient_history (
+    id VARCHAR(50) PRIMARY KEY,
+    patient_id VARCHAR(50) NOT NULL REFERENCES patients(id),
+    visit_date DATE NOT NULL,
+    doctor_name VARCHAR(100),
+    department_name VARCHAR(100),
+    diagnosis TEXT,
+    notes TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS emergency_cases (
+    id VARCHAR(50) PRIMARY KEY,
+    queue_entry_id VARCHAR(50) REFERENCES queue_entries(id),
+    patient_id VARCHAR(50) REFERENCES patients(id),
+    doctor_id VARCHAR(50) REFERENCES doctors(id),
+    level VARCHAR(20) DEFAULT 'EMERGENCY',
+    reason TEXT NOT NULL,
+    status VARCHAR(30) DEFAULT 'ACTIVE',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -188,4 +257,26 @@ CREATE TABLE IF NOT EXISTS audit_logs (
     reason TEXT,
     details_json TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS clinic_settings (
+    key_name VARCHAR(50) PRIMARY KEY,
+    value_text TEXT NOT NULL,
+    description TEXT,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS working_hours (
+    id VARCHAR(50) PRIMARY KEY,
+    day_of_week VARCHAR(20) NOT NULL,
+    open_time VARCHAR(20) NOT NULL,
+    close_time VARCHAR(20) NOT NULL,
+    is_open BOOLEAN DEFAULT TRUE
+);
+
+CREATE TABLE IF NOT EXISTS holidays (
+    id VARCHAR(50) PRIMARY KEY,
+    holiday_date DATE NOT NULL UNIQUE,
+    name VARCHAR(100) NOT NULL,
+    description TEXT
 );

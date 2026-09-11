@@ -178,8 +178,8 @@ router.get('/virtual-waiting-room/:token', (req, res) => {
      LEFT JOIN doctors d ON q.doctor_id = d.id
      LEFT JOIN doctor_status ds ON ds.doctor_id = d.id
      LEFT JOIN departments dept ON q.department_id = dept.id
-     WHERE UPPER(q.token_number) = $1 OR q.id = $1`,
-    [token]
+     WHERE UPPER(q.token_number) = $1 OR q.id = $2`,
+    [token, token]
   );
 
   if (!entry) {

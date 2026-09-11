@@ -124,6 +124,83 @@ export async function fetchDoctors() {
   return res.json();
 }
 
+export async function fetchRooms() {
+  const res = await fetch(`${API_BASE}/api/rooms`);
+  if (!res.ok) throw new Error('Failed to fetch rooms');
+  return res.json();
+}
+
+export async function assignDoctorToRoom(doctorId, roomNumber, floor) {
+  const res = await fetch(`${API_BASE}/api/rooms/assign`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ doctorId, roomNumber, floor })
+  });
+  if (!res.ok) throw new Error('Failed to assign room');
+  return res.json();
+}
+
+export async function fetchAppointments() {
+  const res = await fetch(`${API_BASE}/api/appointments`, {
+    headers: getAuthHeaders()
+  });
+  if (!res.ok) throw new Error('Failed to fetch appointments');
+  return res.json();
+}
+
+export async function createAppointment(data) {
+  const res = await fetch(`${API_BASE}/api/appointments`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(data)
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.error || 'Failed to book appointment');
+  }
+  return res.json();
+}
+
+export async function savePrescription(data) {
+  const res = await fetch(`${API_BASE}/api/prescriptions`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(data)
+  });
+  if (!res.ok) throw new Error('Failed to save prescription');
+  return res.json();
+}
+
+export async function fetchPatientHistory(patientId) {
+  const res = await fetch(`${API_BASE}/api/prescriptions/patient/${patientId}`);
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function fetchDailyReport() {
+  const res = await fetch(`${API_BASE}/api/reports/daily`, {
+    headers: getAuthHeaders()
+  });
+  if (!res.ok) throw new Error('Failed to fetch report');
+  return res.json();
+}
+
+export async function fetchSettings() {
+  const res = await fetch(`${API_BASE}/api/settings`);
+  if (!res.ok) throw new Error('Failed to fetch settings');
+  return res.json();
+}
+
+export async function saveSettings(settingsArray) {
+  const res = await fetch(`${API_BASE}/api/settings`, {
+    method: 'PUT',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ settings: settingsArray })
+  });
+  if (!res.ok) throw new Error('Failed to save settings');
+  return res.json();
+}
+
 export async function fetchVirtualWaitingRoom(token) {
   const res = await fetch(`${API_BASE}/api/queue/virtual-waiting-room/${token}`);
   if (!res.ok) throw new Error('Token not found');
